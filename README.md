@@ -6,7 +6,7 @@
 **A public catalog of AI agent skills for Kotlin Multiplatform projects.**
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Skills](https://img.shields.io/badge/skills-12-brightgreen.svg)](#skills)
+[![Skills](https://img.shields.io/badge/skills-14-brightgreen.svg)](#skills)
 [![Kotlin Multiplatform](https://img.shields.io/badge/Kotlin-Multiplatform-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org/docs/multiplatform/multiplatform-discover-project.html)
 [![Compose Multiplatform](https://img.shields.io/badge/Compose-Multiplatform-4285F4?logo=jetpackcompose&logoColor=white)](https://kotlinlang.org/docs/multiplatform/compose-multiplatform.html)
 
@@ -52,7 +52,80 @@ These skills are intentionally opinionated and grounded in official Android, Kot
 
 ---
 
+### 🐛 Bug Fix & Refactoring
+
+| Skill | What it does |
+|---|---|
+| [`kotlin-project-bugfix`](skills/kotlin-project-bugfix/SKILL.md) | Guides root-cause analysis, minimal fix strategy, and regression prevention for KMP bugs. |
+| [`kotlin-kmp-refactor-safety`](skills/kotlin-kmp-refactor-safety/SKILL.md) | Reviews refactoring safety — behavioral preservation, test coverage, migration strategies, and rollback plans. |
+
+---
+
+## Orchestration
+
+Beyond individual skills, this repository includes a full **agent pipeline** for automated ticket execution, code review, and fixes. The orchestration system is designed to work with Claude Code and can be installed alongside the skills.
+
+### Agent Pipeline
+
+Five specialized agents work together in a structured pipeline:
+
+| Agent | Role | Definition |
+|-------|------|------------|
+| **Planner** | Analyzes tickets, inspects the codebase, and produces structured implementation plans | [`agents/planner.md`](agents/planner.md) |
+| **Implementer** | Executes approved plans by writing production-grade code that fits existing architecture | [`agents/implementer.md`](agents/implementer.md) |
+| **Validator** | Verifies builds pass using an escalating strategy (metadata → Android → tests → detekt) | [`agents/validator.md`](agents/validator.md) |
+| **Reviewer** | Performs strict code review across 10 dimensions (architecture, coroutines, KMP, security, etc.) | [`agents/reviewer.md`](agents/reviewer.md) |
+| **Fixer** | Applies minimal, targeted fixes for blockers and major issues found by the reviewer | [`agents/fixer.md`](agents/fixer.md) |
+
+### 9-Phase Execution Pipeline
+
+The [`execute-ticket`](commands/execute-ticket.md) command orchestrates a full ticket lifecycle:
+
+```
+Phase 1: BRANCH       → Create feature branch from ticket ID
+Phase 2: PLAN         → Planner agent analyzes ticket + codebase, produces plan
+                        ↳ User approval gate
+Phase 3: IMPLEMENT    → Implementer agent executes the approved plan
+Phase 4: VALIDATE     → Validator runs metadata → android → tests → detekt
+Phase 5: REVIEW       → Reviewer performs 10-dimension code review
+Phase 6: FIX          → Fixer resolves all blockers and major issues
+Phase 7: RE-VALIDATE  → Validator re-runs after fixes (must be clean)
+Phase 8: FINALIZE     → Stage, commit, push to remote
+Phase 9: OUTPUT       → Generate PR-ready summary
+```
+
+### Validation Hooks
+
+Shell scripts in [`hooks/`](hooks/) provide standalone validation:
+
+| Hook | Purpose | Usage |
+|------|---------|-------|
+| [`validate-compile.sh`](hooks/validate-compile.sh) | Metadata compilation for a module | `./validate-compile.sh <filepath>` |
+| [`validate-detekt.sh`](hooks/validate-detekt.sh) | Detekt code quality for a module | `./validate-detekt.sh <filepath>` |
+| [`validate-tests.sh`](hooks/validate-tests.sh) | Unit tests for a module | `./validate-tests.sh :module:path` |
+| [`finalize-summary.sh`](hooks/finalize-summary.sh) | Git state summary for end-of-pipeline | `./finalize-summary.sh` |
+
+### Permission Model
+
+Two settings files control what Claude Code can do:
+
+[**`settings.json`**](settings.json) (base, conservative) — allows read operations, git read commands, gradlew tasks, and file inspection. Denies editing secrets/keystores/credentials and destructive git operations. Includes a PostToolUse hook that logs file modifications.
+
+[**`settings.local.json`**](settings.local.json) (extended, for local/CI) — adds full edit/write, git commit/push/rebase, GitHub CLI, ADB commands, and destructive operations.
+
+### GitHub Actions
+
+Two workflow templates automate PR review and fixes:
+
+[**`claude-pr-review.yml`**](.github/workflows/claude-pr-review.yml) — triggers on PR open/sync to `main`. Reviews the diff for architecture, KMP correctness, state management, Compose performance, coroutines, and missing tests. Skips Claude's own PRs and `[skip-review]` titles.
+
+[**`claude-pr-fix.yml`**](.github/workflows/claude-pr-fix.yml) — triggers on `@claude fix` comments in PRs. Reads the diff and all review feedback, applies minimal targeted fixes, commits and pushes. Never expands scope.
+
+---
+
 ## Install
+
+### Skills only
 
 Copy one or more skill folders into your project's agent skills directory.
 
@@ -64,7 +137,32 @@ cp -r skills/kotlin-project-architecture-review .claude/skills/
 cp -r skills/* .claude/skills/
 ```
 
-> The path `.claude/skills/` is an example. The exact directory depends on the agent framework you're using.
+### Full orchestration
+
+Copy agents, commands, hooks, settings, and workflows into your project:
+
+```bash
+# Agents and command
+cp -r agents .claude/agents
+cp -r commands .claude/commands
+
+# Hooks
+cp -r hooks .claude/hooks
+
+# Settings (into .claude/)
+cp settings.json .claude/settings.json
+cp settings.local.json .claude/settings.local.json
+
+# GitHub Actions
+cp -r .github/workflows/* .github/workflows/
+
+# Skills
+cp -r skills/* .claude/skills/
+```
+
+Then add `ANTHROPIC_API_KEY` to your repository secrets for the GitHub Actions workflows.
+
+> The path `.claude/` is an example. The exact directory depends on the agent framework you're using.
 
 ---
 
